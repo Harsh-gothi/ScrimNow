@@ -359,6 +359,10 @@ class ScrimRequestView(View):
             request_row = await cur.fetchone()
 
             if not request_row or request_row['status'] != ScrimStatus.OPEN:
+                logger.warning(
+                    f"[DEBUG] Accept failed: request_id={self.request_id}, row={request_row}, "
+                    f"user={interaction.user.id}"
+                )
                 return await interaction.followup.send("❌ This scrim was just matched by someone else or has expired!", ephemeral=True)
 
             requester_team_id = request_row['team_id']
