@@ -85,7 +85,7 @@ async def get_cursor(commit=False):
     """Async context manager to get a connection and cursor from the async pool."""
     if not pool:
         raise ConnectionError("Database connection pool is not initialized.")
-    async with pool.connection(check=pool.check_async) as conn:
+    async with pool.connection() as conn:
         await conn.execute("SET statement_timeout = '5s'")
         async with conn.cursor(row_factory=dict_row) as cur:
             try:
@@ -891,7 +891,10 @@ async def shutdown(sig):
 async def on_ready():
     global pool
     try:
-        pool = AsyncConnectionPool(min_size=1, max_size=20, conninfo=DATABASE_URL, open=False)
+        pool = AsyncConnectionPool(
+            min_size=1, max_size=20, conninfo=DATABASE_URL, open=False,
+            check=AsyncConnectionPool.check_connection
+        )
         await pool.open()
         logger.info("Async database connection pool established.")
         await setup_database()
