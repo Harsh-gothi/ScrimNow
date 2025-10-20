@@ -760,7 +760,7 @@ async def report_behaviour(interaction: discord.Interaction, match_id: str, reas
         await interaction.followup.send("❌ You have already submitted a behaviour report for this match.", ephemeral=True)
 
 @app_commands.default_permissions(administrator=True)
-class Admin(app_commandsGroup):
+class Admin(app_commands.Group):
     """Admin-only commands"""
     async def _get_disputed_matches(self):
         async with get_cursor() as cur:
