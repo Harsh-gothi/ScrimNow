@@ -1,3 +1,4 @@
 discord.py
+psycopg
 psycopg-binary
 psycopg-pool
