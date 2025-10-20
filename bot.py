@@ -891,7 +891,7 @@ async def shutdown(sig):
 async def on_ready():
     global pool
     try:
-        pool = AsyncConnectionPool(min_size=1, max_size=20, dsn=DATABASE_URL)
+        pool = AsyncConnectionPool(min_size=1, max_size=20, conninfo=DATABASE_URL)
         logger.info("Async database connection pool established.")
         await setup_database()
         
