@@ -892,7 +892,7 @@ async def on_ready():
     global pool
     try:
         pool = AsyncConnectionPool(min_size=1, max_size=20, conninfo=DATABASE_URL)
-	await pool.open()
+        await pool.open()
         logger.info("Async database connection pool established.")
         await setup_database()
         
