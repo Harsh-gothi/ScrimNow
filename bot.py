@@ -333,25 +333,24 @@ class ScrimRequestView(View):
             if (await cur.fetchone())['count'] >= MAX_ACTIVE_MATCHES:
                 return await interaction.followup.send(f"❌ You cannot accept a scrim while you have {MAX_ACTIVE_MATCHES} or more active matches.", ephemeral=True)
             
-            # --- Step 3: (REVISED LOGIC) Get the scrim request and lock the row for update ---
-            # This is safer. We check the status *before* trying to update.
+            # --- Step 2.5: (FIX) Get requester team BEFORE locking to check self-acceptance ---
+            await cur.execute("SELECT team_id FROM scrim_requests WHERE request_id = %s", (self.request_id,))
+            request_preview = await cur.fetchone()
+            if not request_preview:
+                return await interaction.followup.send("❌ This scrim request no longer exists!", ephemeral=True)
+            
+            if request_preview['team_id'] == accepting_team_id:
+                return await interaction.followup.send("❌ You cannot accept your own scrim request!", ephemeral=True)
+            
+            # --- Step 3: Now lock the row for update ---
             await cur.execute("SELECT team_id, status FROM scrim_requests WHERE request_id = %s FOR UPDATE", (self.request_id,))
             request_row = await cur.fetchone()
 
-            # --- Step 4: (REVISED LOGIC) Check all failure conditions ---
+            # --- Step 4: Check all failure conditions ---
             if not request_row or request_row['status'] != ScrimStatus.OPEN:
                 return await interaction.followup.send("❌ This scrim was just matched by someone else or has expired!", ephemeral=True)
 
             requester_team_id = request_row['team_id']
-            
-            if requester_team_id == accepting_team_id:
-                return await interaction.followup.send("❌ You cannot accept your own scrim request!", ephemeral=True)
-
-            # --- Step 5: (NEW LOGIC) Check recent match cooldown ---
-            # This check was moved here because we now have both team IDs
-            await cur.execute("SELECT COUNT(*) FROM matches WHERE ((team1_id = %s AND team2_id = %s) OR (team1_id = %s AND team2_id = %s)) AND created_at > NOW() - INTERVAL '%s seconds'", (requester_team_id, accepting_team_id, accepting_team_id, requester_team_id, MATCH_COOLDOWN_SECONDS))
-            if (await cur.fetchone())['count'] > 0:
-                return await interaction.followup.send("❌ You have played against this team too recently. Please wait before matching again.", ephemeral=True)
 
             # --- Step 6: (NEW LOGIC) All checks passed, NOW we update the status ---
             await cur.execute("UPDATE scrim_requests SET status = %s WHERE request_id = %s", (ScrimStatus.MATCHED, self.request_id))
