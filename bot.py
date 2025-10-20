@@ -4,7 +4,7 @@ from discord import app_commands
 from discord.ui import Button, View
 import psycopg
 from psycopg.rows import dict_row
-from psycopg.pool import AsyncConnectionPool
+from psycopg_pool import AsyncConnectionPool
 import os
 from datetime import datetime, timezone
 from typing import List, Callable, Any
