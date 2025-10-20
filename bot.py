@@ -701,7 +701,7 @@ async def report(interaction: discord.Interaction, match_id: str, result: app_co
         
         if not match_data: return await interaction.followup.send("❌ Match not found.")
         if match_data['status'] != MatchStatus.SCHEDULED: return await interaction.followup.send("❌ This match has already been completed or disputed.")
-
+        if not match_data['c1_id'] or not match_data['c2_id']: return await interaction.followup.send("❌ One of the teams in this match no longer exists.", ephemeral=True)
         is_team1 = (interaction.user.id == match_data['c1_id'])
         if not is_team1 and interaction.user.id != match_data['c2_id']: return await interaction.followup.send("❌ You are not a captain in this match.")
         if (is_team1 and match_data['reported_winner_team1'] is not None) or (not is_team1 and match_data['reported_winner_team2'] is not None): return await interaction.followup.send("❌ You already submitted a report for this match.")
