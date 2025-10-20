@@ -116,7 +116,7 @@ async def setup_database():
         await cur.execute(f'''CREATE TABLE IF NOT EXISTS scrim_requests
                      (request_id SERIAL PRIMARY KEY,
                       team_id INTEGER REFERENCES teams(team_id) ON DELETE CASCADE,
-                      status TEXT DEFAULT '{ScrimStatus.OPEN}',
+                      status TEXT DEFAULT '{ScrimStatus.OPEN.value}',
                       created_at TIMESTAMPTZ DEFAULT NOW(),
                       hub_message_id BIGINT)''')
 
@@ -125,7 +125,7 @@ async def setup_database():
                       team1_id INTEGER REFERENCES teams(team_id) ON DELETE SET NULL,
                       team2_id INTEGER REFERENCES teams(team_id) ON DELETE SET NULL,
                       game TEXT,
-                      status TEXT DEFAULT '{MatchStatus.SCHEDULED}',
+                      status TEXT DEFAULT '{MatchStatus.SCHEDULED.value}',
                       reported_winner_team1 INTEGER,
                       reported_winner_team2 INTEGER,
                       final_winner_team_id INTEGER,
@@ -143,7 +143,7 @@ async def setup_database():
                 reporting_team_id INTEGER REFERENCES teams(team_id) ON DELETE SET NULL,
                 accused_team_id INTEGER REFERENCES teams(team_id) ON DELETE SET NULL,
                 reason TEXT NOT NULL,
-                status TEXT DEFAULT '{ReportStatus.PENDING}',
+                status TEXT DEFAULT '{ReportStatus.PENDING.value}',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(match_id, reporting_team_id)
             )
@@ -359,10 +359,6 @@ class ScrimRequestView(View):
             request_row = await cur.fetchone()
 
             if not request_row or request_row['status'] != ScrimStatus.OPEN:
-                logger.warning(
-                    f"[DEBUG] Accept failed: request_id={self.request_id}, row={request_row}, "
-                    f"user={interaction.user.id}"
-                )
                 return await interaction.followup.send("❌ This scrim was just matched by someone else or has expired!", ephemeral=True)
 
             requester_team_id = request_row['team_id']
