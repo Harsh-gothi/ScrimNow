@@ -686,51 +686,57 @@ class Scrim(app_commands.Group):
 @app_commands.choices(result=[app_commands.Choice(name="🏆 We Won", value="win"), app_commands.Choice(name="🏳️ We Lost", value="loss")])
 async def report(interaction: discord.Interaction, match_id: str, result: app_commands.Choice[str]):
     await interaction.response.defer(ephemeral=True)
-    try: match_id_int = int(match_id)
-    except ValueError: return await interaction.followup.send("❌ Invalid Match ID.")
+    try:
+        match_id_int = int(match_id)
+    except ValueError:
+        return await interaction.followup.send("❌ Invalid Match ID.")
+    try:
+        async with get_cursor(commit=True) as cur:
+            await cur.execute("""SELECT m.team1_id, m.team2_id, t1.captain_id as c1_id, t2.captain_id as c2_id,
+                                    m.reported_winner_team1, m.reported_winner_team2,
+                                    t1.team_name, t2.team_name as team_name_1, m.status
+                            FROM matches m 
+                            LEFT JOIN teams t1 ON m.team1_id = t1.team_id 
+                            LEFT JOIN teams t2 ON m.team2_id = t2.team_id
+                            WHERE m.match_id = %s FOR UPDATE""", (match_id_int,))
+            match_data = await cur.fetchone()
+            
+            if not match_data: return await interaction.followup.send("❌ Match not found.")
+            if match_data['status'] != MatchStatus.SCHEDULED: return await interaction.followup.send("❌ This match has already been completed or disputed.")
 
-    async with get_cursor(commit=True) as cur:
-        await cur.execute("""SELECT m.team1_id, m.team2_id, t1.captain_id as c1_id, t2.captain_id as c2_id,
-                                m.reported_winner_team1, m.reported_winner_team2,
-                                t1.team_name, t2.team_name as team_name_1, m.status
-                         FROM matches m 
-                         LEFT JOIN teams t1 ON m.team1_id = t1.team_id 
-                         LEFT JOIN teams t2 ON m.team2_id = t2.team_id
-                         WHERE m.match_id = %s FOR UPDATE""", (match_id_int,))
-        match_data = await cur.fetchone()
-        
-        if not match_data: return await interaction.followup.send("❌ Match not found.")
-        if match_data['status'] != MatchStatus.SCHEDULED: return await interaction.followup.send("❌ This match has already been completed or disputed.")
+            is_team1 = (interaction.user.id == match_data['c1_id'])
+            if not is_team1 and interaction.user.id != match_data['c2_id']: return await interaction.followup.send("❌ You are not a captain in this match.")
+            if (is_team1 and match_data['reported_winner_team1'] is not None) or (not is_team1 and match_data['reported_winner_team2'] is not None): return await interaction.followup.send("❌ You already submitted a report for this match.")
 
-        is_team1 = (interaction.user.id == match_data['c1_id'])
-        if not is_team1 and interaction.user.id != match_data['c2_id']: return await interaction.followup.send("❌ You are not a captain in this match.")
-        if (is_team1 and match_data['reported_winner_team1'] is not None) or (not is_team1 and match_data['reported_winner_team2'] is not None): return await interaction.followup.send("❌ You already submitted a report for this match.")
+            reporting_team_id = match_data['team1_id'] if is_team1 else match_data['team2_id']
+            winner_id = reporting_team_id if result.value == 'win' else (match_data['team2_id'] if is_team1 else match_data['team1_id'])
+            opponent_captain_id = match_data['c2_id'] if is_team1 else match_data['c1_id']
+            
+            if is_team1:
+                await cur.execute("UPDATE matches SET reported_winner_team1 = %s, first_report_at = COALESCE(first_report_at, NOW()) WHERE match_id = %s", (winner_id, match_id_int))
+                opponent_report = match_data['reported_winner_team2']
+            else:
+                await cur.execute("UPDATE matches SET reported_winner_team2 = %s, first_report_at = COALESCE(first_report_at, NOW()) WHERE match_id = %s", (winner_id, match_id_int))
+                opponent_report = match_data['reported_winner_team1']
 
-        reporting_team_id = match_data['team1_id'] if is_team1 else match_data['team2_id']
-        winner_id = reporting_team_id if result.value == 'win' else (match_data['team2_id'] if is_team1 else match_data['team1_id'])
-        opponent_captain_id = match_data['c2_id'] if is_team1 else match_data['c1_id']
-        
-        if is_team1:
-            await cur.execute("UPDATE matches SET reported_winner_team1 = %s, first_report_at = COALESCE(first_report_at, NOW()) WHERE match_id = %s", (winner_id, match_id_int))
-            opponent_report = match_data['reported_winner_team2']
-        else:
-            await cur.execute("UPDATE matches SET reported_winner_team2 = %s, first_report_at = COALESCE(first_report_at, NOW()) WHERE match_id = %s", (winner_id, match_id_int))
-            opponent_report = match_data['reported_winner_team1']
-
-        status, data = None, None
-        if opponent_report is None:
-            status = "WAITING_FORFEIT"
-            data = opponent_captain_id
-        elif opponent_report == winner_id:
-            loser_id = match_data['team2_id'] if winner_id == match_data['team1_id'] else match_data['team1_id']
-            await _apply_elo_and_stats(cur, winner_id, loser_id)
-            await cur.execute("UPDATE matches SET status = %s, final_winner_team_id = %s WHERE match_id = %s", (MatchStatus.COMPLETED, winner_id, match_id_int))
-            status = "CONFIRMED"
-            data = match_data['team_name'] if winner_id == match_data['team1_id'] else match_data['team_name_1']
-        else:
-            await cur.execute("UPDATE matches SET status = %s WHERE match_id = %s", (MatchStatus.DISPUTED, match_id_int))
-            status = "DISPUTED"
-
+            status, data = None, None
+            if opponent_report is None:
+                status = "WAITING_FORFEIT"
+                data = opponent_captain_id
+            elif opponent_report == winner_id:
+                loser_id = match_data['team2_id'] if winner_id == match_data['team1_id'] else match_data['team1_id']
+                await _apply_elo_and_stats(cur, winner_id, loser_id)
+                await cur.execute("UPDATE matches SET status = %s, final_winner_team_id = %s WHERE match_id = %s", (MatchStatus.COMPLETED, winner_id, match_id_int))
+                status = "CONFIRMED"
+                data = match_data['team_name'] if winner_id == match_data['team1_id'] else match_data['team_name_1']
+            else:
+                await cur.execute("UPDATE matches SET status = %s WHERE match_id = %s", (MatchStatus.DISPUTED, match_id_int))
+                status = "DISPUTED"
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        await log_event(f"❌ /report crashed: {e}\n{tb}", "error")
+        await interaction.followup.send("❌ An unexpected error occurred.", ephemeral=True)
     _cancel_all_tasks_for_match(match_id_int)
         
     if status == "WAITING_FORFEIT":
