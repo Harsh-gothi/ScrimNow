@@ -1,4 +1,3 @@
-# Force rebuild v1
 import discord
 from discord import app_commands
 from discord.ui import Button, View
@@ -458,7 +457,6 @@ async def leaderboard(interaction: discord.Interaction):
         embed.description = "\n".join([f"{medals[i] if i < 3 else f'**#{i+1}**'} **{row['team_name']}** | {int(row['elo'])} Elo ({row['wins']}W-{row['losses']}L)" for i, row in enumerate(top_teams)])
     await interaction.followup.send(embed=embed)
 
-@tree.command(name="team")
 class Team(app_commands.Group):
     """Manage your team"""
     @app_commands.command(name="create", description="Register your team for scrims")
@@ -589,9 +587,6 @@ class Team(app_commands.Group):
         await log_event(f"Team **{result['team_name']}** deleted by `{interaction.user}`.", "warning")
         await interaction.followup.send(f"✅ Your team **{result['team_name']}** has been deleted.")
 
-# --- All other commands and the main on_ready and run blocks are identical ---
-# --- to the last full implementation and are included in the final file. ---
-@tree.command(name="scrim")
 class Scrim(app_commands.Group):
     """Find or manage a scrim"""
     @app_commands.command(name="post", description="Post a request to find a practice match")
@@ -764,9 +759,8 @@ async def report_behaviour(interaction: discord.Interaction, match_id: str, reas
     except psycopg.errors.UniqueViolation:
         await interaction.followup.send("❌ You have already submitted a behaviour report for this match.", ephemeral=True)
 
-@tree.command(name="admin")
 @app_commands.default_permissions(administrator=True)
-class Admin(app_commands.Group):
+class Admin(app_commandsGroup):
     """Admin-only commands"""
     async def _get_disputed_matches(self):
         async with get_cursor() as cur:
@@ -866,6 +860,11 @@ class Admin(app_commands.Group):
         
         await log_event(f"Admin `{interaction.user}` confirmed misconduct report `{report_id}`.", "info")
         await interaction.response.send_message(f"✅ Report `{report_id}` confirmed. The team has been penalized.", ephemeral=True)
+
+# --- Register Command Groups ---
+tree.add_command(Team())
+tree.add_command(Scrim())
+tree.add_command(Admin())
 
 async def _schedule_reminder(delay_seconds: float, match_id: int, cap1: int, cap2: int):
     await asyncio.sleep(delay_seconds)
