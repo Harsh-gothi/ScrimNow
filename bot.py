@@ -85,7 +85,7 @@ async def get_cursor(commit=False):
     """Async context manager to get a connection and cursor from the async pool."""
     if not pool:
         raise ConnectionError("Database connection pool is not initialized.")
-    async with pool.connection(check=pool.check_connection_async) as conn:
+    async with pool.connection(check=pool.check_async) as conn:
         await conn.execute("SET statement_timeout = '5s'")
         async with conn.cursor(row_factory=dict_row) as cur:
             try:
