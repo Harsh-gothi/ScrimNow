@@ -891,7 +891,7 @@ async def shutdown(sig):
 async def on_ready():
     global pool
     try:
-        pool = AsyncConnectionPool(min_size=1, max_size=20, conninfo=DATABASE_URL)
+        pool = AsyncConnectionPool(min_size=1, max_size=20, conninfo=DATABASE_URL, open=False)
         await pool.open()
         logger.info("Async database connection pool established.")
         await setup_database()
@@ -961,8 +961,12 @@ async def on_ready():
                 LEFT JOIN teams t2 ON m.team2_id = t2.team_id
                 WHERE m.status = %s 
                   AND m.first_report_at IS NOT NULL
-                  AND (m.reported_winner_team1 IS NOT NULL XOR m.reported_winner_team2 IS NOT NULL) 
-            """, (MatchStatus.SCHEDULED,))
+                    AND (
+                        (m.reported_winner_team1 IS NOT NULL AND m.reported_winner_team2 IS NULL)
+                    OR
+                        (m.reported_winner_team1 IS NULL AND m.reported_winner_team2 IS NOT NULL)
+                    )
+                """, (MatchStatus.SCHEDULED,))
             pending_forfeits = await cur.fetchall()
 
         restored_forfeits = 0
