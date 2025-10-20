@@ -1,2 +1,3 @@
 discord.py
-psycopg[binary,pool]
+psycopg-binary
+psycopg-pool
