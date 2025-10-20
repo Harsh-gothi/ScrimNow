@@ -320,30 +320,43 @@ class ScrimRequestView(View):
     async def accept_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         async with get_cursor(commit=True) as cur:
+            
+            # --- Step 1: Get the user accepting the scrim ---
             await cur.execute("SELECT team_id FROM teams WHERE captain_id = %s", (interaction.user.id,))
             accepting_team_row = await cur.fetchone()
             if not accepting_team_row:
                 return await interaction.followup.send("❌ You need to be a captain to accept a scrim.", ephemeral=True)
             accepting_team_id = accepting_team_row['team_id']
             
+            # --- Step 2: Check their active match limit ---
             await cur.execute("SELECT COUNT(*) FROM matches WHERE (team1_id = %s OR team2_id = %s) AND status = %s", (accepting_team_id, accepting_team_id, MatchStatus.SCHEDULED))
             if (await cur.fetchone())['count'] >= MAX_ACTIVE_MATCHES:
                 return await interaction.followup.send(f"❌ You cannot accept a scrim while you have {MAX_ACTIVE_MATCHES} or more active matches.", ephemeral=True)
             
-            await cur.execute("UPDATE scrim_requests SET status = %s WHERE request_id = %s AND status = %s RETURNING team_id", (ScrimStatus.MATCHED, self.request_id, ScrimStatus.OPEN))
+            # --- Step 3: (REVISED LOGIC) Get the scrim request and lock the row for update ---
+            # This is safer. We check the status *before* trying to update.
+            await cur.execute("SELECT team_id, status FROM scrim_requests WHERE request_id = %s FOR UPDATE", (self.request_id,))
             request_row = await cur.fetchone()
-            if not request_row:
+
+            # --- Step 4: (REVISED LOGIC) Check all failure conditions ---
+            if not request_row or request_row['status'] != ScrimStatus.OPEN:
                 return await interaction.followup.send("❌ This scrim was just matched by someone else or has expired!", ephemeral=True)
+
             requester_team_id = request_row['team_id']
             
             if requester_team_id == accepting_team_id:
-                await cur.execute("UPDATE scrim_requests SET status = %s WHERE request_id = %s", (ScrimStatus.OPEN, self.request_id))
                 return await interaction.followup.send("❌ You cannot accept your own scrim request!", ephemeral=True)
-            
+
+            # --- Step 5: (NEW LOGIC) Check recent match cooldown ---
+            # This check was moved here because we now have both team IDs
             await cur.execute("SELECT COUNT(*) FROM matches WHERE ((team1_id = %s AND team2_id = %s) OR (team1_id = %s AND team2_id = %s)) AND created_at > NOW() - INTERVAL '%s seconds'", (requester_team_id, accepting_team_id, accepting_team_id, requester_team_id, MATCH_COOLDOWN_SECONDS))
             if (await cur.fetchone())['count'] > 0:
                 return await interaction.followup.send("❌ You have played against this team too recently. Please wait before matching again.", ephemeral=True)
-            
+
+            # --- Step 6: (NEW LOGIC) All checks passed, NOW we update the status ---
+            await cur.execute("UPDATE scrim_requests SET status = %s WHERE request_id = %s", (ScrimStatus.MATCHED, self.request_id))
+
+            # --- Step 7: Get team info and create the match (no changes from here) ---
             await cur.execute("SELECT team_name, captain_id, game FROM teams WHERE team_id = %s", (requester_team_id,))
             requester_team = await cur.fetchone()
             await cur.execute("SELECT team_name, captain_id FROM teams WHERE team_id = %s", (accepting_team_id,))
@@ -352,6 +365,7 @@ class ScrimRequestView(View):
             await cur.execute("""INSERT INTO matches (team1_id, team2_id, game) VALUES (%s, %s, %s) RETURNING match_id""", (requester_team_id, accepting_team_id, requester_team['game']))
             match_id = (await cur.fetchone())['match_id']
         
+        # --- The rest of the function is identical ---
         requester_name, requester_captain_id, game = requester_team['team_name'], requester_team['captain_id'], requester_team['game']
         accepting_name, accepting_captain_id = accepting_team['team_name'], accepting_team['captain_id']
         
