@@ -1,2 +1,2 @@
 discord.py
-psycopg[binary]
+psycopg-binary
