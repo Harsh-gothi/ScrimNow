@@ -1,4 +1,4 @@
 discord.py
-psycopg
 psycopg-binary
 psycopg-pool
+# Force rebuild v2
