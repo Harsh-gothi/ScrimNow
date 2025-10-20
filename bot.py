@@ -606,18 +606,19 @@ class Scrim(app_commands.Group):
     @app_commands.command(name="post", description="Post a request to find a practice match")
     @app_commands.checks.cooldown(1, 60.0, key=lambda i: i.user.id)
     async def post(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         if not HUB_SERVER_ID or not HUB_CHANNEL_ID:
-            return await interaction.response.send_message("⚠️ Hub Server not configured.", ephemeral=True)
+            return await interaction.followup.send("⚠️ Hub Server not configured.", ephemeral=True)
         
         request_id = None
         try:
             async with get_cursor(commit=True) as cur:
                 await cur.execute("SELECT team_id, team_name, game, rank, region FROM teams WHERE captain_id = %s", (interaction.user.id,))
                 team = await cur.fetchone()
-                if not team: return await interaction.response.send_message("❌ You need to be a team captain.", ephemeral=True)
+                if not team: return await interaction.followup.send("❌ You need to be a team captain.", ephemeral=True)
                 
                 await cur.execute("SELECT request_id FROM scrim_requests sr JOIN teams t ON sr.team_id = t.team_id WHERE t.captain_id = %s AND sr.status = %s", (interaction.user.id, ScrimStatus.OPEN))
-                if await cur.fetchone(): return await interaction.response.send_message("❌ You already have an open scrim request. Use `/scrim cancel` first.", ephemeral=True)
+                if await cur.fetchone(): return await interaction.followup.send("❌ You already have an open scrim request. Use `/scrim cancel` first.", ephemeral=True)
                 
                 await cur.execute("INSERT INTO scrim_requests (team_id) VALUES (%s) RETURNING request_id", (team['team_id'],))
                 request_id = (await cur.fetchone())['request_id']
@@ -637,13 +638,13 @@ class Scrim(app_commands.Group):
             async with get_cursor(commit=True) as cur:
                 await cur.execute("UPDATE scrim_requests SET hub_message_id = %s WHERE request_id = %s", (hub_message.id, request_id))
             
-            await interaction.response.send_message(f"✅ Your scrim request (`{request_id}`) is live!", ephemeral=True)
+            await interaction.followup.send(f"✅ Your scrim request (`{request_id}`) is live!", ephemeral=True)
         except Exception as e:
             await log_event(f"Failed to post scrim request `{request_id or 'N/A'}` to hub. Rolling back. Error: {e}", "error")
             if request_id:
                 async with get_cursor(commit=True) as cur:
                     await cur.execute("DELETE FROM scrim_requests WHERE request_id = %s", (request_id,))
-            await interaction.response.send_message(f"❌ Could not post to hub server. The request has been cancelled.", ephemeral=True)
+            await interaction.followup.send(f"❌ Could not post to hub server. The request has been cancelled.", ephemeral=True)
 
     @app_commands.command(name="cancel", description="Cancel your open scrim request")
     async def cancel(self, interaction: discord.Interaction):
