@@ -958,7 +958,7 @@ async def on_ready():
             restored_views = 0
             for req in open_requests:
                 try:
-                    time_elapsed = (datetime.now(timezone.utc) - req['created_at']).total_seconds()
+                    time_elapsed = (datetime.now(timezone.utc) - req['created_at'].astimezone(timezone.utc)).total_seconds()
                     remaining_timeout = SCRIM_REQUEST_TIMEOUT_SECONDS - time_elapsed
                     if remaining_timeout <= 0:
                         async with get_cursor(commit=True) as cur:
